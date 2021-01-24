@@ -10,10 +10,10 @@
 
 AnimatorMatrix move_towards_point(const ym_range2r& bb, const ym_vec2r& pos, double scale){
     auto res_am = AnimatorMatrix(bb);
-    for (auto i = 0; i <= res_am.mats.size(); i++){
-        auto v_d = pos - res_am.mats_centers[i];
+    for (auto i = 0; i <= res_am.mats_.size(); i++){
+        auto v_d = pos - res_am.mats_centers_[i];
         v_d = ym_normalize(v_d);
-        res_am.mats[i].t = v_d * scale;
+        res_am.mats_[i].t = v_d * scale;
 
     }
     
@@ -48,20 +48,21 @@ AnimatorMatrix morph_to_circle(const ym_range2r& bb, const ym_vec2r& pos, double
     auto res_am = AnimatorMatrix(bb);
     auto circle = make_polyline_circle({0.0, 0.0}, 25.0, 4.0);
     
-    for (auto i = 0; i <= res_am.mats.size(); i++){
-        res_am.mats[i].t = pos - res_am.mats_centers[i];
+    for (auto i = 0; i <= res_am.mats_.size(); i++){
+        res_am.mats_[i].t = pos - res_am.mats_centers_[i];
     }
     return res_am;
 }
 
-ym_affine2r get_matrix(const AnimatorMatrix& am, const ym_vec2r& pos){
+ym_affine2r get_matrix_nearest(const AnimatorMatrix& am, const ym_vec2r& pos){
     if (!ym_rinside(am.bounding_box, pos)){
         printf("[AnimatorMatrix] ERROR: position outside the bounding box;");
         return ym_affine2r();
     }
     else{
+        if(am.mats_.empty()) return am.cmat;
         auto ins = (pos - am.bounding_box.min) / am.step;
-        auto x_idx = (int)ins.x, y_idx = (int)ins.y;
+//        auto x_idx = (int)ins.x, y_idx = (int)ins.y;
 //        
 //        ym_affine2r mat_00, mat_01, mat_02,
 //                    mat_10, mat_11, mat_12,
@@ -77,7 +78,7 @@ ym_affine2r get_matrix(const AnimatorMatrix& am, const ym_vec2r& pos){
 //        mat_21 = am.mats[(int)matrix_resolution * (y_idx + 1) + (x_idx)];     auto log_m21 = ln(mat_21); log_m21 = log_m21 * (1.0 / 9.0);
 //        mat_22 = am.mats[(int)matrix_resolution * (y_idx + 1) + (x_idx + 1)]; auto log_m22 = ln(mat_22); log_m22 = log_m22 * (1.0 / 9.0);
         
-        auto mat = am.mats[(int)matrix_resolution * (int)ins.y + (int)ins.x];
+        auto mat = am.mats_[(int)matrix_resolution * (int)ins.y + (int)ins.x];
         
 //        mat = ym_affine2r(exp(log_m00 + log_m01 + log_m02 + log_m10 + log_m11 + log_m12 + log_m20 + log_m21 + log_m22));
         
@@ -85,22 +86,19 @@ ym_affine2r get_matrix(const AnimatorMatrix& am, const ym_vec2r& pos){
     }
 }
 
-void set_matrix(AnimatorMatrix am, const ym_affine2r& mat, int x_idx, int y_idx){
-    if (x_idx < 0 || y_idx < 0 || x_idx >= matrix_resolution || y_idx >= matrix_resolution){
-        printf("[AnimatorMatrix] ERROR: invalid index;");
-    }
-    else{
-        am.mats[(int)matrix_resolution * y_idx + x_idx] = mat;
-    }
-}
+#if 0
 
-polygon2r transform(const AnimatorMatrix& am, const polygon2r& poly, double incr){
+polygon2r transform(const AnimatorMatrix& am, const polygon2r& poly, double incr) {
     auto new_shape = polygon2r();
     auto centroid = get_centroid(poly);
+    
+    new_shape.reserve(poly.size());
     for (auto&& line : poly){
         new_shape += polyline2r();
+        new_shape.back().reserve(line.size());
         for (auto&& p : line){
-            auto m = get_matrix(am, p);
+#if SPEEDUP_MATLN == 0
+            auto m = get_matrix_nearest(am, p);
             
             auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
             auto log_m = ln(mat);
@@ -119,6 +117,77 @@ polygon2r transform(const AnimatorMatrix& am, const polygon2r& poly, double incr
             new_p = ym_transform_point(incr_aff_t, new_p);
             
             new_shape.back() += (new_p + centroid);
+#elif SPEEDUP_MATLN == 1
+            auto m = get_matrix_nearest(am, p);
+            
+            auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+            auto log_m = ln(mat);
+            log_m = log_m * incr;
+            log_m = exp(log_m);
+
+            auto log_m2 = ln(m.m);
+            log_m2 = log_m2 * incr;
+            log_m2 = exp(log_m2);
+            
+            printf("- %f %f\n", log_m[0][0], log_m[1][1]);
+            printf("+ %f %f\n", log_m2[0][0], log_m2[1][1]);
+
+            auto incr_t = m.t * incr;
+            auto incr_rot = ym_mat2r(log_m2);
+            
+            auto new_p = incr_rot * (p - centroid) + incr_t;
+            
+            new_shape.back() += (new_p + centroid);
+#elif SPEEDUP_MATLN == 2
+            if(am.mats_.empty()) {
+                if(am.cmat__hack__incr < 0) {
+                    auto m = get_matrix_nearest(am, p);
+                    
+                    auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+                    auto log_m = ln(mat);
+                    log_m = log_m * incr;
+                    log_m = exp(log_m);
+                    
+                    auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+                    auto log_m_t = ln(mat_t);
+                    log_m_t = log_m_t * incr;
+                    log_m_t = exp(log_m_t);
+                    
+                    ((AnimatorMatrix&)am).cmat__hack__exp_r = ym_affine2r(log_m);
+                    ((AnimatorMatrix&)am).cmat__hack__exp_t = ym_affine2r(log_m_t);
+                    ((AnimatorMatrix&)am).cmat__hack__incr = incr;
+                } else if(am.cmat__hack__incr != incr) {
+                    printf("ERROR!!!!\n");
+                }
+                
+                auto new_p = ym_transform_point(am.cmat__hack__exp_r, p - centroid);
+                new_p = ym_transform_point(am.cmat__hack__exp_t, new_p);
+                
+                new_shape.back() += (new_p + centroid);
+            } else {
+                auto m = get_matrix_nearest(am, p);
+                
+                auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+                auto log_m = ln(mat);
+                log_m = log_m * incr;
+                log_m = exp(log_m);
+                
+                auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+                auto log_m_t = ln(mat_t);
+                log_m_t = log_m_t * incr;
+                log_m_t = exp(log_m_t);
+                
+                auto incr_aff = ym_affine2r(log_m);
+                auto incr_aff_t = ym_affine2r(log_m_t);
+                
+                auto new_p = ym_transform_point(incr_aff, p - centroid);
+                new_p = ym_transform_point(incr_aff_t, new_p);
+                
+                new_shape.back() += (new_p + centroid);
+            }
+#else
+#error
+#endif
         }
     }
     return new_shape;
@@ -127,7 +196,12 @@ polygon2r transform(const AnimatorMatrix& am, const polygon2r& poly, double incr
 polygon2r transform_group(const AnimatorMatrix& am, const polygon2r& poly, double incr){
     auto new_shape = polygon2r();
     auto centroid = get_centroid(poly);
-    auto m = get_matrix(am, centroid);
+    
+    auto incr_aff = ym_affine2r{};
+    auto incr_aff_t = ym_affine2r{};
+    
+#if SPEEDUP_MATLN == 0
+    auto m = get_matrix_nearest(am, centroid);
     
     auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
     auto log_m = ln(mat);
@@ -139,11 +213,57 @@ polygon2r transform_group(const AnimatorMatrix& am, const polygon2r& poly, doubl
     log_m_t = log_m_t * incr;
     log_m_t = exp(log_m_t);
     
-    auto incr_aff = ym_affine2r(log_m);
-    auto incr_aff_t = ym_affine2r(log_m_t);
+    incr_aff = ym_affine2r(log_m);
+    incr_aff_t = ym_affine2r(log_m_t);
     
+#elif SPEEDUP_MATLN == 2
+    if(am.mats_.empty()) {
+        if(am.cmat__hack__incr < 0) {
+            auto m = get_matrix_nearest(am, centroid);
+            
+            auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+            auto log_m = ln(mat);
+            log_m = log_m * incr;
+            log_m = exp(log_m);
+            
+            auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+            auto log_m_t = ln(mat_t);
+            log_m_t = log_m_t * incr;
+            log_m_t = exp(log_m_t);
+            
+            ((AnimatorMatrix&)am).cmat__hack__exp_r = ym_affine2r(log_m);
+            ((AnimatorMatrix&)am).cmat__hack__exp_t = ym_affine2r(log_m_t);
+            ((AnimatorMatrix&)am).cmat__hack__incr = incr;
+        } else if(am.cmat__hack__incr != incr) {
+            printf("ERROR!!!!\n");
+        }
+        
+        incr_aff = am.cmat__hack__exp_r;
+        incr_aff_t = am.cmat__hack__exp_t;
+    } else {
+        auto m = get_matrix_nearest(am, centroid);
+        
+        auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+        auto log_m = ln(mat);
+        log_m = log_m * incr;
+        log_m = exp(log_m);
+        
+        auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+        auto log_m_t = ln(mat_t);
+        log_m_t = log_m_t * incr;
+        log_m_t = exp(log_m_t);
+        
+        incr_aff = ym_affine2r(log_m);
+        incr_aff_t = ym_affine2r(log_m_t);
+    }
+#else
+#error
+#endif
+    
+    new_shape.reserve(poly.size());
     for (auto&& line : poly){
         new_shape += polyline2r();
+        new_shape.back().reserve(line.size());
         for (auto&& p : line){
             auto new_p = ym_transform_point(incr_aff, p);
             new_p = ym_transform_point(incr_aff_t, new_p);
@@ -153,13 +273,189 @@ polygon2r transform_group(const AnimatorMatrix& am, const polygon2r& poly, doubl
     return new_shape;
 }
 
-AnimatedShape* transform_attributes(const AnimatorMatrix& am, AnimatedShape* shape, double frame){
-    shape->border_color = (1.0 - frame) * am.start_b_color + frame * am.end_b_color;
-    shape->fill_color   = (1.0 - frame) * am.start_f_color + frame * am.end_f_color;
-    return shape;
+#endif
+
+void transform(const AnimatorMatrix& am, polygon2r* poly, double incr) {
+    auto centroid = get_centroid(*poly);
+    
+    for (auto&& line : *poly) {
+        for (auto&& p : line) {
+#if SPEEDUP_MATLN == 0
+            auto m = get_matrix_nearest(am, p);
+            
+            auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+            auto log_m = ln(mat);
+            log_m = log_m * incr;
+            log_m = exp(log_m);
+            
+            auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+            auto log_m_t = ln(mat_t);
+            log_m_t = log_m_t * incr;
+            log_m_t = exp(log_m_t);
+            
+            auto incr_aff = ym_affine2r(log_m);
+            auto incr_aff_t = ym_affine2r(log_m_t);
+            
+            auto new_p = ym_transform_point(incr_aff, p - centroid);
+            new_p = ym_transform_point(incr_aff_t, new_p);
+            
+            p = (new_p + centroid);
+#elif SPEEDUP_MATLN == 1
+            auto m = get_matrix_nearest(am, p);
+            
+            auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+            auto log_m = ln(mat);
+            log_m = log_m * incr;
+            log_m = exp(log_m);
+            
+            auto log_m2 = ln(m.m);
+            log_m2 = log_m2 * incr;
+            log_m2 = exp(log_m2);
+            
+            printf("- %f %f\n", log_m[0][0], log_m[1][1]);
+            printf("+ %f %f\n", log_m2[0][0], log_m2[1][1]);
+            
+            auto incr_t = m.t * incr;
+            auto incr_rot = ym_mat2r(log_m2);
+            
+            auto new_p = incr_rot * (p - centroid) + incr_t;
+            
+            p = (new_p + centroid);
+#elif SPEEDUP_MATLN == 2
+            if(am.mats_.empty()) {
+                if(am.cmat__hack__incr < 0) {
+                    auto m = get_matrix_nearest(am, p);
+                    
+                    auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+                    auto log_m = ln(mat);
+                    log_m = log_m * incr;
+                    log_m = exp(log_m);
+                    
+                    auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+                    auto log_m_t = ln(mat_t);
+                    log_m_t = log_m_t * incr;
+                    log_m_t = exp(log_m_t);
+                    
+                    ((AnimatorMatrix&)am).cmat__hack__exp_r = ym_affine2r(log_m);
+                    ((AnimatorMatrix&)am).cmat__hack__exp_t = ym_affine2r(log_m_t);
+                    ((AnimatorMatrix&)am).cmat__hack__incr = incr;
+                } else if(am.cmat__hack__incr != incr) {
+                    printf("ERROR!!!!\n");
+                }
+                
+                auto new_p = ym_transform_point(am.cmat__hack__exp_r, p - centroid);
+                new_p = ym_transform_point(am.cmat__hack__exp_t, new_p);
+                
+                p = (new_p + centroid);
+            } else {
+                auto m = get_matrix_nearest(am, p);
+                
+                auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+                auto log_m = ln(mat);
+                log_m = log_m * incr;
+                log_m = exp(log_m);
+                
+                auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+                auto log_m_t = ln(mat_t);
+                log_m_t = log_m_t * incr;
+                log_m_t = exp(log_m_t);
+                
+                auto incr_aff = ym_affine2r(log_m);
+                auto incr_aff_t = ym_affine2r(log_m_t);
+                
+                auto new_p = ym_transform_point(incr_aff, p - centroid);
+                new_p = ym_transform_point(incr_aff_t, new_p);
+                
+                p = (new_p + centroid);
+            }
+#else
+#error
+#endif
+        }
+    }
 }
 
-AnimatorMatrix get_matrix(const AnimatorKeyframes& akf, int keyframe){
+void transform_group(const AnimatorMatrix& am, polygon2r* poly, double incr){
+    auto centroid = get_centroid(*poly);
+    
+    auto incr_aff = ym_affine2r{};
+    auto incr_aff_t = ym_affine2r{};
+    
+#if SPEEDUP_MATLN == 0
+    auto m = get_matrix_nearest(am, centroid);
+    
+    auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+    auto log_m = ln(mat);
+    log_m = log_m * incr;
+    log_m = exp(log_m);
+    
+    auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+    auto log_m_t = ln(mat_t);
+    log_m_t = log_m_t * incr;
+    log_m_t = exp(log_m_t);
+    
+    incr_aff = ym_affine2r(log_m);
+    incr_aff_t = ym_affine2r(log_m_t);
+    
+#elif SPEEDUP_MATLN == 2
+    if(am.mats_.empty()) {
+        if(am.cmat__hack__incr < 0) {
+            auto m = get_matrix_nearest(am, centroid);
+            
+            auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+            auto log_m = ln(mat);
+            log_m = log_m * incr;
+            log_m = exp(log_m);
+            
+            auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+            auto log_m_t = ln(mat_t);
+            log_m_t = log_m_t * incr;
+            log_m_t = exp(log_m_t);
+            
+            ((AnimatorMatrix&)am).cmat__hack__exp_r = ym_affine2r(log_m);
+            ((AnimatorMatrix&)am).cmat__hack__exp_t = ym_affine2r(log_m_t);
+            ((AnimatorMatrix&)am).cmat__hack__incr = incr;
+        } else if(am.cmat__hack__incr != incr) {
+            printf("ERROR!!!!\n");
+        }
+        
+        incr_aff = am.cmat__hack__exp_r;
+        incr_aff_t = am.cmat__hack__exp_t;
+    } else {
+        auto m = get_matrix_nearest(am, centroid);
+        
+        auto mat = ym_mat<double, 3, 3>(m.m, {0.0, 0.0});
+        auto log_m = ln(mat);
+        log_m = log_m * incr;
+        log_m = exp(log_m);
+        
+        auto mat_t = ym_mat<double, 3, 3>({{1.0, 0.0}, {0.0, 1.0}}, m.t);
+        auto log_m_t = ln(mat_t);
+        log_m_t = log_m_t * incr;
+        log_m_t = exp(log_m_t);
+        
+        incr_aff = ym_affine2r(log_m);
+        incr_aff_t = ym_affine2r(log_m_t);
+    }
+#else
+#error
+#endif
+    
+    for (auto&& line : *poly) {
+        for (auto&& p : line){
+            auto new_p = ym_transform_point(incr_aff, p);
+            new_p = ym_transform_point(incr_aff_t, new_p);
+            p = new_p;
+        }
+    }
+}
+
+void transform_attributes(const AnimatorMatrix& am, AnimatedShape* shape, double frame){
+    shape->border_color = (1.0 - frame) * am.start_b_color + frame * am.end_b_color;
+    shape->fill_color   = (1.0 - frame) * am.start_f_color + frame * am.end_f_color;
+}
+
+const AnimatorMatrix& get_matrix_nearest(const AnimatorKeyframes& akf, int keyframe){
     auto key_idx = std::distance(akf.keyframes_idx.begin(), std::find(akf.keyframes_idx.begin(), akf.keyframes_idx.end(), keyframe));
     return akf.keyframes.at(key_idx);
 }
@@ -185,15 +481,7 @@ pair<AnimatorMatrix, ym_vec2r> get_matrix(const AnimatorKeyframes& akf, double d
 AnimatorKeyframes copy(const AnimatorKeyframes& akf){
     auto res = AnimatorKeyframes();
     res.keyframes = vector<AnimatorMatrix>();
-    for (auto&& am : akf.keyframes) res.keyframes.push_back(copy(am));
+    for (auto&& am : akf.keyframes) res.keyframes.push_back(am);
     for (auto&& am_i : akf.keyframes_idx) res.keyframes_idx.push_back(am_i);
-    return res;
-}
-
-AnimatorMatrix copy(const AnimatorMatrix& am){
-    auto res = AnimatorMatrix(am.bounding_box);
-    std::copy(std::begin(am.mats), std::end(am.mats), std::begin(res.mats));
-    std::copy(std::begin(am.mats_centers), std::end(am.mats_centers), std::begin(res.mats_centers));
-    res.step = ym_vec2r(am.step.x, am.step.y);
     return res;
 }

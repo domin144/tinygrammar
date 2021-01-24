@@ -3,7 +3,7 @@
 //  tinygrammar
 //
 //  Created by tangles on 6/8/16.
-//  Copyright © 2016 visgraph. All rights reserved.
+//  Copyright Â© 2016 visgraph. All rights reserved.
 //
 
 #include <iostream>
@@ -20,7 +20,7 @@ void printTimeLine(Grammar* g, TimeManager::TimeLine* t){
     std::cout << " ~~~ Printing Timeline ~~~ " << std::endl;
     auto k = 0;
     for (auto&& ntl : t->timelines){
-        std::cout << (k++) << " " << mapping_to_tag(g, ntl->node->content->shapes[0]->tag) << "\t|";
+        std::cout << (k++) << " " << mapping_to_tag(g, ntl->node->shapes[0]->tag) << "\t|";
         auto ntl_duration = ntl->duration;
         char slice_char = '-';
         for (auto&& s : ntl->slices){
@@ -65,15 +65,25 @@ void printTimeLine(Grammar* g, TimeManager::TimeLine* t){
 }
 
 int main(int argc, const char * argv[]) {
+    auto input_grammar = std::string(argv[1]);
+    auto input_svg = std::string(argv[2]);
+    auto input_out = std::string(argv[3]);
+    auto input_enableSum = std::stoi(argv[4]);
+    
+    grammar_filename = input_grammar;
+    svgout_filename = input_out;
+    enable_updateSum = input_enableSum;
     
     auto em = (HistoryAnim*)(make_history(animation_history));
     auto grammar = get_grammar(grammar_filename);
-    auto tree = initialize_tree(grammar, 3, 5, "resources/svg/teaser.svg");
-//    auto tree = initialize_tree(grammar, 2, 7, "resources/svg/test_tagged_2.svg"); // squares and circles
-//    auto tree = initialize_tree(grammar, 2, 2, "resources/svg/test_tagged_2.svg"); // squares and circles
+    //  auto tree = initialize_tree(grammar, 3, 5, "resources/svg/tangleSVGprova.svg");
+    //    auto tree = initialize_tree(grammar, 2, 7, "resources/svg/test_tagged_2.svg"); // squares and circles
+    //  auto tree = initialize_tree(grammar, 2, 2, "resources/svg/test_tagged_2.svg"); // squares and circles
+    //    auto tree = initialize_tree(grammar, 3, 5, "resources/svg/edo_square4000.svg");
+    auto tree = initialize_tree(grammar, 3, 5, input_svg);
     
     auto init_step = matching_init();
-    auto init_shapes = init_step->op(ShapeGroup(), init_step->produced_tags, init_step->parameters, grammar->rn, nullptr, nullptr, tree);
+    auto init_shapes = init_step->op.apply(ShapeGroup(), init_step->produced_tags, init_step->parameters, grammar->rn, nullptr, nullptr, tree);
     auto init_partition = PartitionShapeGroup();
     init_partition.added = init_shapes;
     init_partition.remainder = ShapeGroup();
@@ -95,7 +105,6 @@ int main(int argc, const char * argv[]) {
     std::chrono::steady_clock::time_point exp_end= std::chrono::steady_clock::now();
     std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(exp_end - exp_begin).count() <<std::endl;
     std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::nanoseconds> (exp_end - exp_begin).count() <<std::endl;
-
     
     auto last_exp = ((ExpansionAnim*)(em->history.back()));
     auto duration = last_exp->timeline->duration;
@@ -114,9 +123,9 @@ int main(int argc, const char * argv[]) {
     save_svg(last_exp->tree, {(int)size.x, (int)size.y}, {size.x/2.0, size.y/2.0}, {3.0, 3.0}, ss.str());
     if (grammar->dry_run) return 0;
     
-    for (auto i = frame_step; (i - duration) <= EPS_2; i = i + frame_step){
+    for (auto i = frame_step; (i - duration) <= EPS_2_3; i = i + frame_step){
         if (IS_DEBUG) printf("Animating frame %d\n", k);
-        else  printf("#%d...", k);
+        else  { printf("#%d...\n", k); fflush(stdout); }
         TimeManager::AnimateTimeLine(last_exp->timeline, last_exp->tree, ym_clamp(i, 0.0, duration), frame_step);
         stringstream ss1;
         ss1 << std::setfill('0') << std::setw(3) << k;

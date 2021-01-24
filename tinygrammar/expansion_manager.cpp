@@ -181,7 +181,7 @@ ShapeGroup to_animated_shapes(const vector<BaseExpansion*>& active_nodes){
     for (auto an : active_nodes){
         auto temp = ((ExpansionAnim*)an);
         for (auto&& l : temp->tree->leaves)
-            for (auto&& s : l->content->shapes)
+            for (auto&& s : l->shapes)
                 res.push_back(s);
     }
     return res;
@@ -191,7 +191,7 @@ ShapeGroup to_animated_shapes(const vector<BaseExpansion*>& active_nodes){
 void expand_init(History* h) {
     auto grammar = get_grammar(grammar_filename);
     auto init_step = matching_init();
-    auto init_shapes = init_step->op(ShapeGroup(), init_step->produced_tags, init_step->parameters, grammar->rn);
+    auto init_shapes = init_step->op.apply(ShapeGroup(), init_step->produced_tags, init_step->parameters, grammar->rn);
     auto init_partition = PartitionShapeGroup();
     init_partition.added = init_shapes;
     init_partition.remainder = ShapeGroup();
@@ -209,7 +209,7 @@ bool expand(History* h) {
     if (grammar_step.second != nullptr){
         //if an appliable rule has been found, apply it and retrieve results
 //        printf("Rule applied : %s \n", grammar_step.second->rule_name_str.c_str());
-        grammar_step.first.added = grammar_step.second->op(grammar_step.first.match, grammar_step.second->produced_tags, grammar_step.second->parameters, grammar->rn);
+        grammar_step.first.added = grammar_step.second->op.apply(grammar_step.first.match, grammar_step.second->produced_tags, grammar_step.second->parameters, grammar->rn);
         //update model
         update_history(h, grammar_step.first, grammar_step.second);
         return true;
@@ -226,21 +226,26 @@ void expand_init(HistoryAnim* h) {
 
 bool expand(HistoryAnim* h) {
     //retrieve active nodes
+    
     auto front = get_active_nodes(h);
     //pass them to grammar core
     auto grammar = get_grammar(grammar_filename);
     
     auto active_slices = to_slices(front);
-    // Mapping the shapes to their respective slices
-    auto shapes_map = map<Shape*, TimeManager::NodeTimeLine*>();
-    for (auto && as : active_slices) shapes_map[as] = TimeManager::FindTimeLine(h->history.back()->timeline, ((TimeSliceShape*)as)->slice);
     
-    auto grammar_step = matching_slice(grammar, active_slices, shapes_map);
+    for (auto && as : active_slices) {
+        auto slice = ((TimeSliceShape*)as)->slice;
+        if(!slice->__expand__to_timeline__) {
+            slice->__expand__to_timeline__ = TimeManager::FindTimeLine(h->history.back()->timeline, slice);
+        }
+    }
     
-    if (grammar_step.second != nullptr){
+    auto grammar_step = matching_slice(grammar, active_slices);
+    
+    if (grammar_step.second != nullptr) {
         //if an appliable rule has been found, apply it and retrieve results
 //        printf("[TIME] Rule applied : %s \n", grammar_step.second->rule_name_str.c_str());
-        grammar_step.first.added = grammar_step.second->op(grammar_step.first.match, grammar_step.second->produced_tags, grammar_step.second->parameters,
+        grammar_step.first.added = grammar_step.second->op.apply(grammar_step.first.match, grammar_step.second->produced_tags, grammar_step.second->parameters,
                                                            grammar->rn, nullptr, h->history.back()->timeline);
         //update model
         update_history(h, grammar_step.first, grammar_step.second);
@@ -254,9 +259,13 @@ bool expand(HistoryAnim* h) {
         auto anim_shapes = to_animated_shapes(front);
         
         // Mapping the shapes to their respective slices
-        auto shapes_map = map<Shape*, TimeManager::NodeTimeLine*>();
-        for (auto && as : anim_shapes){
-            shapes_map[(AnimatedShape*)as] = TimeManager::FindTimeLine(h->history.back()->timeline, CSGTree::FindNode(h->history.back()->tree, (AnimatedShape*)as));
+        auto shapes_map = unordered_map<Shape*, TimeManager::NodeTimeLine*>();
+        for (auto && as : anim_shapes) {
+            if(!as->__expand__to_leafnode__) {
+                as->__expand__to_leafnode__ = CSGTree::FindNode(h->history.back()->tree, (AnimatedShape*)as);;
+            }
+            CSGTree::LeafNode* node = as->__expand__to_leafnode__;
+            shapes_map[(AnimatedShape*)as] = TimeManager::FindTimeLine(h->history.back()->timeline, node);
         }
         grammar_step = matching_anim_shape(grammar, anim_shapes, shapes_map);
         
@@ -279,7 +288,7 @@ bool expand(HistoryAnim* h) {
             }
 
             // Apply the animation to the selected slices
-            grammar_step.first.added = grammar_step.second->op(shapes, grammar_step.second->produced_tags, grammar_step.second->parameters,
+            grammar_step.first.added = grammar_step.second->op.apply(shapes, grammar_step.second->produced_tags, grammar_step.second->parameters,
                                                                grammar->rn, nullptr, h->history.back()->timeline);
             //update model
             update_history(h, grammar_step.first, grammar_step.second);

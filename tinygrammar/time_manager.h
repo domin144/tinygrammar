@@ -19,14 +19,18 @@ namespace TimeManager {
 
     static double anim_current_time = 0.0;
     
+    struct NodeTimeLine;
+    
     struct TimeSlice{
         int ts_tag = -1;
         double duration;
         AnimatorKeyframes animation;
         
+        NodeTimeLine* __expand__to_timeline__ = nullptr;
+        
         TimeSlice (double d) : duration(d){}
         TimeSlice (double d, int tag) : duration(d), ts_tag(tag) {animation = AnimatorKeyframes();}
-        TimeSlice (double d, AnimatorKeyframes akf) : duration(d), animation(akf) {}
+        TimeSlice (double d, const AnimatorKeyframes& akf) : duration(d), animation(akf) {}
     };
 
     struct NodeTimeLine{
@@ -36,7 +40,7 @@ namespace TimeManager {
         
         NodeTimeLine (double d) : duration(d) {slices = vector<TimeSlice*>();}
         NodeTimeLine (double d, TimeSlice* ts) : duration(d), slices({ts}){}
-        NodeTimeLine (double d, AnimatorKeyframes akf) : duration(d), slices({new TimeSlice(d, akf)}){}
+        NodeTimeLine (double d, const AnimatorKeyframes& akf) : duration(d), slices({new TimeSlice(d, akf)}){}
         
         ~NodeTimeLine(){}
     };
@@ -49,7 +53,7 @@ namespace TimeManager {
         
         TimeLine () { timelines = vector<NodeTimeLine*>(); current_time = 0.0; }
         TimeLine (double d) : duration(d), timelines({new NodeTimeLine(d)}){ current_time = 0.0; }
-        TimeLine (double d, AnimatorKeyframes akf) : duration(d), timelines({new NodeTimeLine(d, akf)}){
+        TimeLine (double d, const AnimatorKeyframes& akf) : duration(d), timelines({new NodeTimeLine(d, akf)}){
             current_time = 0.0;
         }
         
@@ -70,13 +74,10 @@ namespace TimeManager {
     
     void AnimateTimeLine(TimeLine* t, CSGTree::Tree* tree, double current_time, double incr);
     void AnimateNodeTimeLine(NodeTimeLine* ntl, CSGTree::Tree* tree, double current_time, double incr);
-    
-    static ThreadPool pool(8);
-
 }
 
 struct TimeSliceShape : Shape {
-    TimeManager::TimeSlice* slice;
+    TimeManager::TimeSlice* slice = nullptr;
     
     TimeSliceShape () {shape_type = time_shape;};
     TimeSliceShape (TimeManager::TimeSlice* s) {shape_type = time_shape; slice = s;};

@@ -55,6 +55,7 @@ target_sources(
         tinygrammar/animator_matrix.h
         tinygrammar/clipper_methods.cpp
         tinygrammar/clipper_methods.h
+        tinygrammar/common.cpp
         tinygrammar/common.h
         tinygrammar/csg_tree.cpp
         tinygrammar/csg_tree.h

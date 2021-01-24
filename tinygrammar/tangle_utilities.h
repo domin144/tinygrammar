@@ -13,7 +13,7 @@
 
 inline ym_vec2r orthogonal(const ym_vec2r& x) { return {x.y,-x.x}; }
 inline ym_frame2r frame_from_x(const ym_vec2r& o, const ym_vec2r& x) { auto f = ym_identity_frame2r; f.o = o; f.x = ym_normalize(x); f.y = orthogonal(f.x); return f; }
-static ym_frame2r rotate(const ym_vec2r& o, const double angle) { return frame_from_x(o, ym_vec2r(cos(angle * ym_pi / 180.0), sin(angle * ym_pi / 180.0))); }
+inline ym_frame2r rotate(const ym_vec2r& o, const double angle) { return frame_from_x(o, ym_vec2r(cos(angle * ym_pi / 180.0), sin(angle * ym_pi / 180.0))); }
 
 // |=====================================|
 // |======== POLYLINES METHODS ==========|
@@ -81,7 +81,7 @@ inline polyline2r make_polyline_circle(const ym_vec2r& c, double radius, double 
     return curve;
 }
 
-static polyline2r make_line(const ym_vec2r& a, const ym_vec2r& b) {
+inline polyline2r make_line(const ym_vec2r& a, const ym_vec2r& b) {
     return make_polyline_segment(a, b, resolution);
 }
 
@@ -154,7 +154,14 @@ inline bool inside_polylines(const vector<polyline2r>& curves, const ym_vec2r& p
 }
 
 inline bool inside_polyline(const polyline2r& curve, const ym_vec2r& p) {
-    return inside_polylines({curve}, p);
+    auto flips = false;
+    for(auto i : range((int)curve.size()-1)) {
+        if ( ((curve[i].y>p.y) != (curve[i+1].y>p.y)) &&
+            (p.x < (curve[i].x-curve[i+1].x) * (p.y-curve[i].y) /
+             (curve[i+1].y-curve[i].y) + curve[i].x) )
+            flips = not flips;
+    }
+    return flips;
 }
 
 // only for closed ones

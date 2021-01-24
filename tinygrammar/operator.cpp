@@ -21,7 +21,7 @@ ShapeGroup _split_shapes(const vector<polyline2r>& curves, Shape* shape, int gid
     return children;
 }
 
-vector<polyline2r> _curves(const polygon2r& poly, const ym_frame2r& frame, rule_params parameters, rng& rn) {
+vector<polyline2r> _curves(const polygon2r& poly, const ym_frame2r& frame, const rule_params& parameters, rng& rn) {
     auto bbox = bounds_polygon(transform_polygon_inverse(frame, poly));
     auto offset = ym_rsize(bbox).y / round(ym_rsize(bbox).y / parameters[0]);
     auto curves = vector<polyline2r>();
@@ -47,7 +47,7 @@ vector<polyline2r> _curves(const polygon2r& poly, const ym_frame2r& frame, rule_
     return curves;
 }
 
-ShapeGroup tangle_split_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& rn, ShapeGroup* annotations){
+ShapeGroup tangle_split_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& rn, ShapeGroup* annotations){
     auto children = ShapeGroup();
     auto gid = TangleShape::next_gid();
     
@@ -62,7 +62,7 @@ ShapeGroup tangle_split_operator(const ShapeGroup& shapes, rule_tags tags, rule_
     return children;
 }
 
-ShapeGroup init_operator(rule_tags tags, rule_params parameters, int init_value, rng& rn){
+ShapeGroup init_operator(const rule_tags& tags, const rule_params& parameters, int init_value, rng& rn){
     auto children = ShapeGroup();
     if (parameters[0] == 0){
         // built-in shape
@@ -83,7 +83,7 @@ ShapeGroup init_operator(rule_tags tags, rule_params parameters, int init_value,
 // |       TIME OPERATORS       |
 // |============================|
 
-ShapeGroup time_init_operator(rule_tags tags, rule_params parameters, int init_value, rng& rn, CSGTree::Tree* tree){
+ShapeGroup time_init_operator(const rule_tags& tags, const rule_params& parameters, int init_value, rng& rn, CSGTree::Tree* tree){
     auto children = ShapeGroup();
     
     if (tree == nullptr) {
@@ -105,7 +105,7 @@ ShapeGroup time_init_operator(rule_tags tags, rule_params parameters, int init_v
     return children;
 }
 
-ShapeGroup time_slice_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& rn, TimeManager::TimeLine* timeline){
+ShapeGroup time_slice_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& rn, TimeManager::TimeLine* timeline){
     auto children = ShapeGroup();
     auto g = get_grammar(grammar_filename);
     for(auto&& shape : shapes) {
@@ -162,11 +162,12 @@ vector<pair<TimeSliceShape*, TimeManager::NodeTimeLine*>> get_data(Grammar* g, T
     int n_c = 0, i_c = 0;
     int n_tid_max = 0, i_tid_max = 0;
     auto data = vector<pair<TimeSliceShape*, TimeManager::NodeTimeLine*>>();
+    data.reserve(shapes.size());
     for (auto&& s : shapes){
         auto temp = (TimeSliceShape*)s;
         auto ntl = TimeManager::FindTimeLine(timeline, temp->slice);
-        if (is_tag_invert(g, temp->slice->ts_tag)) { i_c++; i_m_d = min(i_m_d, temp->slice->duration); i_tid_max = max(i_tid_max, ntl->node->content->shapes[0]->tid);}
-        else { n_c++; n_m_d = min(n_m_d, temp->slice->duration); n_tid_max = max(n_tid_max, ntl->node->content->shapes[0]->tid);}
+        if (is_tag_invert(g, temp->slice->ts_tag)) { i_c++; i_m_d = min(i_m_d, temp->slice->duration); i_tid_max = max(i_tid_max, ntl->node->shapes[0]->tid);}
+        else { n_c++; n_m_d = min(n_m_d, temp->slice->duration); n_tid_max = max(n_tid_max, ntl->node->shapes[0]->tid);}
         data.push_back(make_pair(temp, ntl));
     }
 //    n_ma_d = max(0.0, n_m_d - offset * n_c);
@@ -178,7 +179,7 @@ vector<pair<TimeSliceShape*, TimeManager::NodeTimeLine*>> get_data(Grammar* g, T
 }
 
 
-ShapeGroup affine_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& sampler, TimeManager::TimeLine* timeline){
+ShapeGroup affine_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& sampler, TimeManager::TimeLine* timeline){
     auto g = get_grammar(grammar_filename);
     auto children = ShapeGroup();
     
@@ -188,9 +189,10 @@ ShapeGroup affine_operator(const ShapeGroup& shapes, rule_tags tags, rule_params
     auto data = get_data(g, timeline, shapes, offset, n_max_dur, i_max_dur);
     
     auto anim_shapes = vector<AnimatedShape*>();
-    for (auto&& ntl : data) anim_shapes.insert(anim_shapes.end(), ntl.second->node->content->shapes.begin(), ntl.second->node->content->shapes.end());
+    for (auto&& ntl : data) anim_shapes.insert(anim_shapes.end(), ntl.second->node->shapes.begin(), ntl.second->node->shapes.end());
     auto bbox = compute_bbox(anim_shapes);
     
+    children.reserve(data.size());
     for(auto&& d : data) {
         auto am  = AnimatorMatrix();
         double start_delta, end_delta;
@@ -204,29 +206,29 @@ ShapeGroup affine_operator(const ShapeGroup& shapes, rule_tags tags, rule_params
 //            am  = AnimatorMatrix(bbox, {{mat.x.x, mat.x.y},{mat.y.x, mat.y.y}, {mat.z.x, mat.z.y}});
             am  = AnimatorMatrix(bbox, {{mat.x.x, mat.x.y},{mat.y.x, mat.y.y}, {-parameters[5], -parameters[6]}});
 
-            start_delta = (offset * d.second->node->content->shapes[0]->tid) / d.first->slice->duration;
-            end_delta = (offset * d.second->node->content->shapes[0]->tid + i_max_dur) / d.first->slice->duration;
+            start_delta = (offset * d.second->node->shapes[0]->tid) / d.first->slice->duration;
+            end_delta = (offset * d.second->node->shapes[0]->tid + i_max_dur) / d.first->slice->duration;
             i_off_count++;
         }
         else {
             am  = AnimatorMatrix(bbox, {{parameters[1], parameters[2]},{parameters[3], parameters[4]}, {parameters[5], parameters[6]}});
-            start_delta = (offset * d.second->node->content->shapes[0]->tid) / d.first->slice->duration;
-            end_delta = (offset * d.second->node->content->shapes[0]->tid + n_max_dur) / d.first->slice->duration;
+            start_delta = (offset * d.second->node->shapes[0]->tid) / d.first->slice->duration;
+            end_delta = (offset * d.second->node->shapes[0]->tid + n_max_dur) / d.first->slice->duration;
             n_off_count++;
         }
         
         if (offset == 0.0) { start_delta = 0.0; end_delta = 1.0; }
         
-        auto akf = AnimatorKeyframes(am, {start_delta, end_delta}, parameters[0] == 1.0 ? anim_single : anim_group, 0.0);
-        
-        d.first->slice->animation = akf;
+        d.first->slice->animation = AnimatorKeyframes(am, {start_delta, end_delta}, parameters[0] == 1.0 ? anim_single : anim_group, 0.0);;
         d.first->slice->ts_tag = tags[0];
+        static int counter = 0;
+        counter++;
         children.push_back(d.first);
     }
     return children;
 }
 
-ShapeGroup move_towards_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& sampler, TimeManager::TimeLine* timeline){
+ShapeGroup move_towards_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& sampler, TimeManager::TimeLine* timeline){
     auto g = get_grammar(grammar_filename);
     auto children = ShapeGroup();
     
@@ -236,7 +238,7 @@ ShapeGroup move_towards_operator(const ShapeGroup& shapes, rule_tags tags, rule_
     auto data = get_data(g, timeline, shapes, offset, n_max_dur, i_max_dur);
     
     auto anim_shapes = vector<AnimatedShape*>();
-    for (auto&& ntl : data) anim_shapes.insert(anim_shapes.end(), ntl.second->node->content->shapes.begin(), ntl.second->node->content->shapes.end());
+    for (auto&& ntl : data) anim_shapes.insert(anim_shapes.end(), ntl.second->node->shapes.begin(), ntl.second->node->shapes.end());
     auto bbox = compute_bbox(anim_shapes);
     
     for(auto&& d : data) {
@@ -245,22 +247,22 @@ ShapeGroup move_towards_operator(const ShapeGroup& shapes, rule_tags tags, rule_
         
         if (is_tag_invert(g, d.first->slice->ts_tag)){
             if (parameters[0] == 1.0) {
-                auto c = ym_rcenter(bounds_polygon(d.second->node->content->shapes[0]->poly));
+                auto c = ym_rcenter(bounds_polygon(d.second->node->shapes[0]->poly));
                 am  = move_towards_point(bbox, {c.x + parameters[1], c.y + parameters[2]}, -parameters[3]);
             }
             else am  = move_towards_point(bbox, {parameters[1], parameters[2]}, -parameters[3]);
-            start_delta = (offset * d.second->node->content->shapes[0]->tid) / d.first->slice->duration;
-            end_delta = (offset * d.second->node->content->shapes[0]->tid + i_max_dur) / d.first->slice->duration;
+            start_delta = (offset * d.second->node->shapes[0]->tid) / d.first->slice->duration;
+            end_delta = (offset * d.second->node->shapes[0]->tid + i_max_dur) / d.first->slice->duration;
             i_off_count++;
         }
         else {
             if (parameters[0] == 1.0) {
-                auto c = ym_rcenter(bounds_polygon(d.second->node->content->shapes[0]->poly));
+                auto c = ym_rcenter(bounds_polygon(d.second->node->shapes[0]->poly));
                 am  = move_towards_point(bbox, {c.x + parameters[1], c.y + parameters[2]}, parameters[3]);
             }
             else am  = move_towards_point(bbox, {parameters[1], parameters[2]}, parameters[3]);
-            start_delta = (offset * d.second->node->content->shapes[0]->tid) / d.first->slice->duration;
-            end_delta = (offset * d.second->node->content->shapes[0]->tid + n_max_dur) / d.first->slice->duration;
+            start_delta = (offset * d.second->node->shapes[0]->tid) / d.first->slice->duration;
+            end_delta = (offset * d.second->node->shapes[0]->tid + n_max_dur) / d.first->slice->duration;
             n_off_count++;
         }
         
@@ -275,7 +277,7 @@ ShapeGroup move_towards_operator(const ShapeGroup& shapes, rule_tags tags, rule_
     return children;
 }
 
-ShapeGroup morph_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& sampler, TimeManager::TimeLine* timeline){
+ShapeGroup morph_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& sampler, TimeManager::TimeLine* timeline){
     auto g = get_grammar(grammar_filename);
     auto children = ShapeGroup();
     int animator_type;
@@ -310,7 +312,7 @@ ShapeGroup morph_operator(const ShapeGroup& shapes, rule_tags tags, rule_params 
     return children;
 }
 
-ShapeGroup attributes_operator(const ShapeGroup& shapes, rule_tags tags, rule_params parameters, rng& sampler, TimeManager::TimeLine* timeline){
+ShapeGroup attributes_operator(const ShapeGroup& shapes, const rule_tags& tags, const rule_params& parameters, rng& sampler, TimeManager::TimeLine* timeline){
     auto children = ShapeGroup();
     
     auto off_count = 1;

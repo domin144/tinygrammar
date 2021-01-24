@@ -10,8 +10,11 @@
 
 
 TimeManager::NodeTimeLine* TimeManager::FindTimeLine (TimeManager::TimeLine* t, TimeManager::TimeSlice* slice){
-    for (auto&& ntm : t->timelines){
-        if (find(ntm->slices.begin(), ntm->slices.end(), slice) != ntm->slices.end()) return ntm;
+    for (auto&& ntm : t->timelines){ //ntm is a NodeTimeLine object
+        // Per ogni time line controllo se la slice vi appartiene
+        if (find(ntm->slices.begin(), ntm->slices.end(), slice) != ntm->slices.end()){
+            return ntm;
+        }
     }
     printf("[ERROR] FindTimeLine : NodeTimeLine not found \n");
     return nullptr;
@@ -143,10 +146,7 @@ void TimeManager::AnimateTimeLine(TimeManager::TimeLine* t, CSGTree::Tree* tree,
 //            TimeManager::pool.enqueue([tree,current_time,incr,ntl](){
 //                TimeManager::AnimateNodeTimeLine(ntl, tree, current_time, incr);
 //            });
-//    
-
-    
-    
+//
     
     //For each NodeTimeLine, update its content.
     for (auto&& ntl : t->timelines){
@@ -164,7 +164,7 @@ void TimeManager::AnimateNodeTimeLine(TimeManager::NodeTimeLine* ntl, CSGTree::T
     
     for (auto&& sl : ntl->slices){
         incr += sl->duration;
-        if (current_time <= incr + EPS_2) {
+        if (current_time <= incr + EPS_2_3) {
             selected_slice = sl;
             slice_current_time = current_time + sl->duration - incr;
             break;
@@ -176,14 +176,13 @@ void TimeManager::AnimateNodeTimeLine(TimeManager::NodeTimeLine* ntl, CSGTree::T
         return;
     }
 
-    if( slice_current_time + delta > selected_slice->duration + EPS_2 ){
+    if( slice_current_time + delta > selected_slice->duration + EPS_2_3 ){
         delta = delta + (selected_slice->duration - slice_current_time);
         slice_current_time = selected_slice->duration;
     }
     
     //Update the node linked to the ntl with the animation associated to the active slice
     if (IS_DEBUG) printf("n %d s %d ", (CSGTree::LeafNode*)ntl->node->node_tag, selected_slice->ts_tag);
-    auto an = Animator(selected_slice->animation.anim_type, selected_slice->animation);
-    CSGTree::UpdateLeafNode(tree, (CSGTree::LeafNode*)ntl->node, an,
-                            slice_current_time, delta, selected_slice->duration);
+    apply_anim(ntl->node->shapes, slice_current_time, delta, selected_slice->duration, selected_slice->animation.anim_type, selected_slice->animation);
 }
+
