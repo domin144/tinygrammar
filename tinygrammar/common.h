@@ -19,6 +19,7 @@
 #include <iostream>
 #include <sstream>
 #include <random>
+#include <cstdarg>
 
 #include "tree.hh"
 #include "yocto_math.h"
@@ -262,24 +263,24 @@ struct range {
     iterator end() const { return iterator(max); }
 };
 
-// simple implementation of optional value
-// use only for small classes since it is not optimized for speed
-template<typename T>
-struct optional {
-    bool        ok = false; // whether it exists
-    T           value;      // the actual value
+//// simple implementation of optional value
+//// use only for small classes since it is not optimized for speed
+//template<typename T>
+//struct optional {
+//    bool        ok = false; // whether it exists
+//    T           value;      // the actual value
     
-    // optional initialization
-    optional() : ok(false), value() { }
-    optional(const T& v): ok(true), value(v) { }
+//    // optional initialization
+//    optional() : ok(false), value() { }
+//    optional(const T& v): ok(true), value(v) { }
     
-    // check whether it is defined
-    operator bool() const { return ok; }
-};
+//    // check whether it is defined
+//    operator bool() const { return ok; }
+//};
 
-// makes an optional
-template<typename T>
-inline optional<T> make_optional(const T& v) { return {v}; }
+//// makes an optional
+//template<typename T>
+//inline optional<T> make_optional(const T& v) { return {v}; }
 
 // python-like list and dictionary manipulation
 template<typename T>

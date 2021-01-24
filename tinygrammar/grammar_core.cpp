@@ -10,6 +10,7 @@
 
 #include <fstream>
 #include <streambuf>
+#include <climits>
 #include "jsonxx.h"
 
 using namespace jsonxx;

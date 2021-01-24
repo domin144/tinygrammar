@@ -1,4 +1,4 @@
-#include <OpenGL/gl.h>
+#include <epoxy/gl.h>
 
 #define NANOVG_GL2_IMPLEMENTATION
 #include "nanovg.h"

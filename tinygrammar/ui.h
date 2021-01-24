@@ -3,7 +3,7 @@
 
 #include "common.h"
 #include "yocto_math.h"
-#include "../external/glfw/glfw3.h"
+#include <glfw/glfw3.h>
 
 #define UI_WIDGETS
 #define IM_ARRAYSIZE(_ARR)  ((int)(sizeof(_ARR)/sizeof(*_ARR)))
